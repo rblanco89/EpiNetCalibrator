@@ -5,7 +5,8 @@
 1		# Initial infected nodes
 0.2		# Probability of developing infection
 0.022		# Probability of infecting 
-1000		# Maximum number of days to simulate 
+500		# Maximum number of days to simulate 
+20		# Number of simulations to average
 12345		# Seed (random numbers)
 
 # Lockdown

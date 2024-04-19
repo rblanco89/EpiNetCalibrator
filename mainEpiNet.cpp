@@ -179,7 +179,7 @@ void epiSimulation(int *newI_vec, int K, float probInfec, float probDevInfec,
 		nContagious = nAsymp + nInfec;
 		if (nContagious == 0) break;
 
-		newI_vec[tt] = newI; // Store the new infected nodes per day
+		newI_vec[tt] += newI; // Store the new infected nodes per day
 		newI = 0;
 
 		if (flagActLD) if (!flagLockdown)
@@ -307,7 +307,7 @@ int main()
 	short err_flag = 0;
 	long seed;
 	int netModel, aveD, initInfec, ldStart, ldEnd, interval, maxDays,
-	    flagActLD;
+	    numSims, flagActLD;
 	float xNodes, betaWS;
 	float probRandomLD, probInfec, probDevInfec;
 	char renglon[200];
@@ -336,13 +336,17 @@ int main()
 	if (fgets(renglon, sizeof(renglon), stdin) == NULL) err_flag = 1;
 	else sscanf(renglon, "%f", &probDevInfec);
 
-	// Probability of infecting with variant
+	// Probability of infecting
 	if (fgets(renglon, sizeof(renglon), stdin) == NULL) err_flag = 1;
 	else sscanf(renglon, "%f", &probInfec);
 
 	// Maximum number of days to simulate
 	if (fgets(renglon, sizeof(renglon), stdin) == NULL) err_flag = 1;
 	else sscanf(renglon, "%d", &maxDays);
+
+	// Number of simulations to average
+	if (fgets(renglon, sizeof(renglon), stdin) == NULL) err_flag = 1;
+	else sscanf(renglon, "%d", &numSims);
 
 	// Seed for random number
 	if (fgets(renglon, sizeof(renglon), stdin) == NULL) err_flag = 1;
@@ -416,14 +420,18 @@ int main()
 	newI_vec = (int*) malloc(maxDays*sizeof(int));
 	memset(newI_vec, 0, maxDays*sizeof(short)); 
 
-	epiSimulation(newI_vec, K, probInfec, probDevInfec,
-                nNodes, nEdges, edge, edgeDel, initInfec, maxDays,
-		flagActLD, ldStart, ldEnd, interval, ranUni, gammaE, gammaI);
+	int ss;
+	for (ss=0; ss<numSims; ss++)
+	{
+		epiSimulation(newI_vec, K, probInfec, probDevInfec,
+                	nNodes, nEdges, edge, edgeDel, initInfec, maxDays,
+			flagActLD, ldStart, ldEnd, interval, ranUni, gammaE, gammaI);
+	}
 
 	int tt;
 	FILE *fNewI;
 	fNewI = fopen("newInfec.dat", "w");
-	for (tt=0; tt<maxDays; tt++) fprintf(fNewI, "%d\n", newI_vec[tt]);
+	for (tt=0; tt<maxDays; tt++) fprintf(fNewI, "%d\n", newI_vec[tt]/numSims);
 	fclose(fNewI);
 
 	free(newI_vec);
