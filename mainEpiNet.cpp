@@ -75,7 +75,6 @@ void genBAnet(int *edge, int nNodes, int K, Ran ranUni)
 	lenBagIds = (nNodes - initNodes)*(K+1) + initNodes;
 	bagIds = (int*) malloc(lenBagIds*sizeof(int));
 	for (ii=0; ii<initNodes; ii++) bagIds[ii] = ii; // Collect the initial nodes in the bag
-	//for (ii=initNodes; ii<lenBagIds; ii++) bagIds[ii] = -1;
 
 	// Connect each new node to previous nodes with
 	// a probability dependent on their degrees
@@ -115,6 +114,187 @@ void genBAnet(int *edge, int nNodes, int K, Ran ranUni)
 		countIds += K + 1;
 	}
 	free(bagIds);
+
+	return;
+}
+
+//---------------------------------------------------------------------------------//
+
+void epiSimulation(int *newI_vec, int K, float probInfec, float probDevInfec,
+		int nNodes, int nEdges, int *edge, int *edgeDel,
+		int initInfec, int maxDays,
+		int flagActLD, int ldStart, int ldEnd, int interval,
+		Ran ranUni, Gammadev gammaE, Gammadev gammaI)
+{
+	// Status (SAIR: Susceptible, Asymptomatic, Infected, Removed)
+	// 0:S, 1:A, 2:I, 3:R 
+	short *nodeStatus, *nodeInfec;	
+
+	nodeStatus = (short*) malloc(nNodes*sizeof(short));
+	memset(nodeStatus, 0, nNodes*sizeof(short)); // All nodes are susceptibles
+	nodeInfec = (short*) malloc(nNodes*sizeof(short));
+	memset(nodeInfec, 0, nNodes*sizeof(short));
+
+	int nn, auxInt;
+	int *asympTimeNode, *infecTimeNode;
+
+	asympTimeNode = (int*) malloc(nNodes*sizeof(int));
+	for (nn=0; nn<nNodes; nn++) asympTimeNode[nn] = gammaE.dev();
+	infecTimeNode = (int*) malloc(nNodes*sizeof(int));
+	for (nn=0; nn<nNodes; nn++) infecTimeNode[nn] = gammaI.dev();
+
+	int nInfec, newI, nAsymp;
+	int oldI, daysNewI;
+
+	nInfec = 0;
+	newI = 0;
+	nAsymp = 0;
+	oldI = 0;
+	daysNewI = 0;
+
+	// Choosing random node for Infected status
+	for (nn=0; nn<initInfec; nn++)
+	{
+		auxInt = ranUni.int32()%nNodes;
+		while (nodeStatus[auxInt] != 0) auxInt = ranUni.int32()%nNodes;
+		nodeStatus[auxInt] = 2; // Infected
+		nInfec++;
+		newI++;
+	}
+
+	int tt, ii, jj, ee;
+	int nContagious;
+	short iiStatus, jjStatus;
+	short flagLockdown, switchLD, count;
+	int time, timeLD;
+
+	flagLockdown = 0;
+	switchLD = 0;
+	count = 0;
+	time = 0;
+	timeLD = 0;
+
+	for (tt=0; tt<maxDays; tt++)
+	{
+		nContagious = nAsymp + nInfec;
+		if (nContagious == 0) break;
+
+		newI_vec[tt] = newI; // Store the new infected nodes per day
+		newI = 0;
+
+		if (flagActLD) if (!flagLockdown)
+                {
+                        if (newI > oldI) daysNewI++;
+                        else daysNewI = 0;
+                        oldI = newI;
+                        if (daysNewI > ldStart)
+			{
+				flagLockdown = 1; // Activate lockdown once
+                                switchLD = 1;
+			}
+		}
+
+                if (flagLockdown == 1)
+                {
+                	if (interval > 0)
+                	{
+                        	count++;
+                        	if (count > interval)
+                        	{
+                                       	count = 0;
+                                       	if (switchLD) switchLD = 0;
+               	                	else switchLD = 1;
+                        	}
+                        }
+
+                        timeLD++;
+                       	if (timeLD > ldEnd)
+                        {
+                        	flagLockdown = 2;
+                        	switchLD = 0;
+                        }
+                }
+
+		// Identifies the suceptible nodes and determine if they will be infected
+		for (ee=0; ee<nEdges; ee++)
+		{
+			// Lockdown resriction
+                        if (switchLD) if(edgeDel[ee]) continue;
+
+			ii = ee/K;
+			jj = edge[ee];
+
+			iiStatus = nodeStatus[ii];
+			jjStatus = nodeStatus[jj];
+
+			if (iiStatus == 0) // Susceptible
+			{
+				//if (jjStatus == 1) if (ranUni.doub() <= probInfec)
+				if (jjStatus == 1 || jjStatus == 2) if (ranUni.doub() <= probInfec)
+				{
+					nodeInfec[ii] = 1;
+				}
+			}
+
+			if (jjStatus == 0) // Susceptible
+			{
+				//if (iiStatus == 1) if (ranUni.doub() <= probInfec)
+				if (iiStatus == 1 || iiStatus == 2) if (ranUni.doub() <= probInfec)
+				{
+					nodeInfec[jj] = 1;
+				}
+			}
+		}
+
+		// Update states
+		for (ii=0; ii<nNodes; ii++)
+		{
+			iiStatus = nodeStatus[ii];
+
+			if (iiStatus == 0) // Suceptible
+			{
+				if (nodeInfec[ii] == 1)
+				{
+					nodeStatus[ii] = 1;
+					nAsymp++;
+				}
+				continue;
+			}
+
+			if (iiStatus == 1) // Asymptomatic
+			{
+				asympTimeNode[ii]--;
+				if (asympTimeNode[ii] > 0) continue;
+				if (ranUni.doub() <= probDevInfec)
+				{
+					nodeStatus[ii] = 2; // Infected
+					nAsymp--;
+					nInfec++;
+					newI++;
+				}
+				else
+				{
+					nodeStatus[ii] = 3; // Removed
+					nAsymp--;
+				}
+				continue;
+			}
+
+			if (iiStatus == 2) // Infected
+			{
+				infecTimeNode[ii]--;
+				if (infecTimeNode[ii] > 0) continue;
+				nodeStatus[ii] = 3; // Removed
+				nInfec--;
+				continue;
+			}
+		}
+	}
+
+	free(nodeStatus);
+	free(nodeInfec);
+	free(asympTimeNode);
+	free(infecTimeNode);
 
 	return;
 }
@@ -219,10 +399,8 @@ int main()
 	if (netModel == 1) // Barabasi-Albert network
 		genBAnet(edge, nNodes, K, ranUni);
 
-	int ee, ii, jj;
-	int auxInt;
-
 	// Lockdown:
+	int ee;
         int *edgeDel;
         edgeDel = (int*) malloc(nEdges*sizeof(int));
 
@@ -232,202 +410,23 @@ int main()
         	else edgeDel[ee] = 0;
         }
 
-	//===| INITIAL STATES |===//
-	
-	// Status (SAIR: Susceptible, Asymptomatic, Infected, Removed)
-	// 0:S, 1:E, 2:I, 3:R 
-	short *nodeStatus, *nodeInfec;	
-
-	nodeStatus = (short*) malloc(nNodes*sizeof(short));
-	memset(nodeStatus, 0, nNodes*sizeof(short)); // All nodes are susceptibles
-	nodeInfec = (short*) malloc(nNodes*sizeof(short));
-	memset(nodeInfec, 0, nNodes*sizeof(short));
-
-	int nn;
-	int *asympTimeNode, *infecTimeNode;
-
-	asympTimeNode = (int*) malloc(nNodes*sizeof(int));
-	for (nn=0; nn<nNodes; nn++) asympTimeNode[nn] = gammaE.dev();
-	infecTimeNode = (int*) malloc(nNodes*sizeof(int));
-	for (nn=0; nn<nNodes; nn++) infecTimeNode[nn] = gammaI.dev();
-
-	int nContagious;
-	int nSuscep, nAsymp, nInfec, nRem;
-	int newA, newI, newR, oldI, daysNewI;
-	short iiStatus, jjStatus;
-
-	nSuscep = nNodes;
-	nAsymp = 0;
-	nInfec = 0;
-	nRem = 0;
-
-	newA = 0;
-	newI = 0;
-	newR = 0;
-	oldI = 0;
-	daysNewI = 0;
-
-	// Choosing random node for Infected status
-	for (nn=0; nn<initInfec; nn++)
-	{
-		auxInt = ranUni.int32()%nNodes;
-		while (nodeStatus[auxInt] != 0) auxInt = ranUni.int32()%nNodes;
-		nodeStatus[auxInt] = 2; // Infected
-		nSuscep--;
-		nInfec++;
-		newI++;
-	}
-
-	short flagLockdown, switchLD, count;
-	int time, timeLD;
-
-	flagLockdown = 0;
-	switchLD = 0;
-	count = 0;
-	time = 0;
-	timeLD = 0;
-	int sumI = 0;
-
 	//===| SIMULATION |===//
+
+	int *newI_vec;
+	newI_vec = (int*) malloc(maxDays*sizeof(int));
+	memset(newI_vec, 0, maxDays*sizeof(short)); 
+
+	epiSimulation(newI_vec, K, probInfec, probDevInfec,
+                nNodes, nEdges, edge, edgeDel, initInfec, maxDays,
+		flagActLD, ldStart, ldEnd, interval, ranUni, gammaE, gammaI);
+
+	int tt;
 	FILE *fNewI;
-	fNewI = fopen("newInfec.dat", "w");	
-	while (1)
-	{
-		fprintf(fNewI, "%d\n", newI);
-		nContagious = nAsymp + nInfec;
-		sumI += newI;
-		time++;
-
-		if (flagActLD) if (!flagLockdown)
-                {
-                        if (newI > oldI) daysNewI++;
-                        else daysNewI = 0;
-                        oldI = newI;
-                        if (daysNewI > ldStart)
-			{
-				flagLockdown = 1; // Activate lockdown once
-                                switchLD = 1;
-			}
-		}
-
-                if (flagLockdown == 1)
-                {
-                	if (interval > 0)
-                	{
-                        	count++;
-                        	if (count > interval)
-                        	{
-                                       	count = 0;
-                                       	if (switchLD) switchLD = 0;
-               	                	else switchLD = 1;
-                        	}
-                        }
-
-                        timeLD++;
-                       	if (timeLD > ldEnd)
-                        {
-                        	flagLockdown = 2;
-                        	switchLD = 0;
-                        }
-                }
-
-		newA = 0;
-		newI = 0;
-		newR = 0;
-
-		if (nContagious == 0) break;
-
-		if (time > maxDays) break;
-
-		// Identifies the suceptible nodes and determine if they will be infected
-		for (ee=0; ee<nEdges; ee++)
-		{
-			// Lockdown resriction
-                        if (switchLD) if(edgeDel[ee]) continue;
-
-			ii = ee/K;
-			jj = edge[ee];
-
-			iiStatus = nodeStatus[ii];
-			jjStatus = nodeStatus[jj];
-
-			if (iiStatus == 0) // Susceptible
-			{
-				//if (jjStatus == 1) if (ranUni.doub() <= probInfec)
-				if (jjStatus == 1 || jjStatus == 2) if (ranUni.doub() <= probInfec)
-				{
-					nodeInfec[ii] = 1;
-				}
-			}
-
-			if (jjStatus == 0) // Susceptible
-			{
-				//if (iiStatus == 1) if (ranUni.doub() <= auxF*probInfec)
-				if (iiStatus == 1 || iiStatus == 2) if (ranUni.doub() <= probInfec)
-				{
-					nodeInfec[jj] = 1;
-				}
-			}
-		}
-
-		// Update states
-		for (ii=0; ii<nNodes; ii++)
-		{
-			iiStatus = nodeStatus[ii];
-
-			if (iiStatus == 0) // Suceptible
-			{
-				if (nodeInfec[ii] == 1)
-				{
-					nodeStatus[ii] = 1;
-					nSuscep--;
-					nAsymp++;
-					newA++;
-				}
-
-				nodeInfec[ii] = 0;
-				continue;
-			}
-
-			if (iiStatus == 1) // Asymptomatic
-			{
-				asympTimeNode[ii]--;
-				if (asympTimeNode[ii] > 0) continue;
-				if (ranUni.doub() <= probDevInfec)
-				{
-					nodeStatus[ii] = 2; // Infected
-					nAsymp--;
-					nInfec++;
-					newI++;
-				}
-				else
-				{
-					nodeStatus[ii] = 3; // Removed
-					nAsymp--;
-					nRem++;
-					newR++;
-				}
-				continue;
-			}
-
-			if (iiStatus == 2) // Infected
-			{
-				infecTimeNode[ii]--;
-				if (infecTimeNode[ii] > 0) continue;
-				nodeStatus[ii] = 3; // Removed
-				nInfec--;
-				nRem++;
-				newR++;
-				continue;
-			}
-		}
-	}
+	fNewI = fopen("newInfec.dat", "w");
+	for (tt=0; tt<maxDays; tt++) fprintf(fNewI, "%d\n", newI_vec[tt]);
 	fclose(fNewI);
 
-	free(nodeStatus);
-	free(nodeInfec);
-	free(asympTimeNode);
-	free(infecTimeNode);
+	free(newI_vec);
 	free(edge);
 	free(edgeDel);
 
