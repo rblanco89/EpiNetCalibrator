@@ -5,8 +5,8 @@
 #include "ranNumbers.h"
 
 /*=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=- FUNCTIONS =-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-*/
-
-void genWSnet(int *edge, int nEdges, int nNodes, int K, float betaWS, Ran ranUni)
+// Remember pass random generators as reference (&)
+void genWSnet(int *edge, int nEdges, int nNodes, int K, float betaWS, Ran &ranUni)
 {
 	int ii, jj, kk, ee, auxInt, accept;
 
@@ -55,8 +55,8 @@ void genWSnet(int *edge, int nEdges, int nNodes, int K, float betaWS, Ran ranUni
 }
 
 //---------------------------------------------------------------------------------//
-
-void genBAnet(int *edge, int nNodes, int K, Ran ranUni)
+// Remember pass random generators as reference (&)
+void genBAnet(int *edge, int nNodes, int K, Ran &ranUni)
 {
 	int ii, jj, kk, auxInt;
 
@@ -120,28 +120,16 @@ void genBAnet(int *edge, int nNodes, int K, Ran ranUni)
 
 //---------------------------------------------------------------------------------//
 
-void epiSimulation(int *newI_vec, int K, float probInfec, float probDevInfec,
-		int nNodes, int nEdges, int *edge, int *edgeDel,
-		int initInfec, int maxDays,
-		int flagActLD, int ldStart, int ldEnd, int interval,
-		Ran ranUni, Gammadev gammaE, Gammadev gammaI)
+void epiSimulation(int *newI_vec, short *nodeStatus, short *nodeInfec,
+		int *asympTimeNode, int *infecTimeNode,
+		int K, float probInfec, float probDevInfec, float probRandomLD,
+		int nNodes, int nEdges, int *edge, int initInfec, int maxDays,
+		int flagActLD, int ldStart, int ldEnd, int interval, Ran &ranUni)
 {
 	// Status (SAIR: Susceptible, Asymptomatic, Infected, Removed)
 	// 0:S, 1:A, 2:I, 3:R 
-	short *nodeStatus, *nodeInfec;	
-
-	nodeStatus = (short*) malloc(nNodes*sizeof(short));
 	memset(nodeStatus, 0, nNodes*sizeof(short)); // All nodes are susceptibles
-	nodeInfec = (short*) malloc(nNodes*sizeof(short));
 	memset(nodeInfec, 0, nNodes*sizeof(short));
-
-	int nn, auxInt;
-	int *asympTimeNode, *infecTimeNode;
-
-	asympTimeNode = (int*) malloc(nNodes*sizeof(int));
-	for (nn=0; nn<nNodes; nn++) asympTimeNode[nn] = gammaE.dev();
-	infecTimeNode = (int*) malloc(nNodes*sizeof(int));
-	for (nn=0; nn<nNodes; nn++) infecTimeNode[nn] = gammaI.dev();
 
 	int nInfec, newI, nAsymp;
 	int oldI, daysNewI;
@@ -152,6 +140,8 @@ void epiSimulation(int *newI_vec, int K, float probInfec, float probDevInfec,
 	oldI = 0;
 	daysNewI = 0;
 
+	int nn;
+	int auxInt;
 	// Choosing random node for Infected status
 	for (nn=0; nn<initInfec; nn++)
 	{
@@ -176,11 +166,10 @@ void epiSimulation(int *newI_vec, int K, float probInfec, float probDevInfec,
 
 	for (tt=0; tt<maxDays; tt++)
 	{
+		newI_vec[tt] += newI; // Store the new infected nodes per day
+
 		nContagious = nAsymp + nInfec;
 		if (nContagious == 0) break;
-
-		newI_vec[tt] += newI; // Store the new infected nodes per day
-		newI = 0;
 
 		if (flagActLD) if (!flagLockdown)
                 {
@@ -215,11 +204,13 @@ void epiSimulation(int *newI_vec, int K, float probInfec, float probDevInfec,
                         }
                 }
 
+		newI = 0;
+
 		// Identifies the suceptible nodes and determine if they will be infected
 		for (ee=0; ee<nEdges; ee++)
 		{
 			// Lockdown resriction
-                        if (switchLD) if(edgeDel[ee]) continue;
+                        if (switchLD) if (ranUni.doub() < probRandomLD) continue;
 
 			ii = ee/K;
 			jj = edge[ee];
@@ -290,11 +281,6 @@ void epiSimulation(int *newI_vec, int K, float probInfec, float probDevInfec,
 			}
 		}
 	}
-
-	free(nodeStatus);
-	free(nodeInfec);
-	free(asympTimeNode);
-	free(infecTimeNode);
 
 	return;
 }
@@ -383,60 +369,66 @@ int main()
 	}
 
 	// Initialize random uniform numbers
-	Ran ranUni(seed);
-	// Exposed time = 3d +- 1d
-	Gammadev gammaE(9.0,3.0,seed); // a = (aveTime/stdTime)^2; b = aveTime/stdTime^2
+	Ran ranUni(12345);
+	// Asymptomatic time = 3d +- 1d
+	Gammadev gammaA(9.0,3.0,seed); // a = (aveTime/stdTime)^2; b = aveTime/stdTime^2
 	// Infected time = 10d +- 3d
 	Gammadev gammaI(100.0/9.0,10.0/9.0,seed); // a = (aveTime/stdTime)^2; b = aveTime/stdTime^2
 
-	//===| GENERATES THE NETWORK |===//
 	
+	char dirFile[100];
+	int tt, ss, nn;
+	FILE *fNewI;
+
+	int *edge;
+	short *nodeStatus, *nodeInfec;	
+	int *asympTime, *infecTime;
+	int *newI_vec;
+
 	int nNodes = xNodes;
 	int K = aveD/2;
 	int nEdges = K*nNodes;
-	int *edge;
+
 	edge = (int*) malloc(nEdges*sizeof(int));
-
-	if (netModel == 0) // Wattz-Strogatz network (ER -> beataWS = 1.0)
-		genWSnet(edge, nEdges, nNodes, K, betaWS, ranUni);
-
-	if (netModel == 1) // Barabasi-Albert network
-		genBAnet(edge, nNodes, K, ranUni);
-
-	// Lockdown:
-	int ee;
-        int *edgeDel;
-        edgeDel = (int*) malloc(nEdges*sizeof(int));
-
-        if (flagActLD) for (ee=0; ee<nEdges; ee++)
-        {
-        	if (ranUni.doub() < probRandomLD) edgeDel[ee] = 1;
-        	else edgeDel[ee] = 0;
-        }
-
-	//===| SIMULATION |===//
-
-	int *newI_vec;
+	nodeStatus = (short*) malloc(nNodes*sizeof(short));
+	nodeInfec = (short*) malloc(nNodes*sizeof(short));
+	asympTime = (int*) malloc(nNodes*sizeof(int));
+	infecTime = (int*) malloc(nNodes*sizeof(int));
 	newI_vec = (int*) malloc(maxDays*sizeof(int));
-	memset(newI_vec, 0, maxDays*sizeof(short)); 
 
-	int ss;
+	memset(newI_vec, 0, maxDays*sizeof(int)); 
+
 	for (ss=0; ss<numSims; ss++)
 	{
-		epiSimulation(newI_vec, K, probInfec, probDevInfec,
-                	nNodes, nEdges, edge, edgeDel, initInfec, maxDays,
-			flagActLD, ldStart, ldEnd, interval, ranUni, gammaE, gammaI);
+		if (netModel == 1) genBAnet(edge, nNodes, K, ranUni); // BA network
+		else genWSnet(edge, nEdges, nNodes, K, betaWS, ranUni); // WS network (beataWS = 1.0 --> ER)
+
+		for (nn=0; nn<nNodes; nn++) asympTime[nn] = gammaA.dev();
+		for (nn=0; nn<nNodes; nn++) infecTime[nn] = gammaI.dev();
+
+		epiSimulation(newI_vec, nodeStatus, nodeInfec, asympTime, infecTime,
+				K, probInfec, probDevInfec, probRandomLD,
+                		nNodes, nEdges, edge, initInfec, maxDays,
+				flagActLD, ldStart, ldEnd, interval, ranUni);
+
+		//sprintf(dirFile, "dataSim/newI_%d.dat", ss);
+		//fNewI = fopen(dirFile, "w");
+		//for (tt=0; tt<maxDays; tt++) fprintf(fNewI, "%d\n", newI_vec[tt]);
+		//fclose(fNewI);
+		//memset(newI_vec, 0, maxDays*sizeof(int)); 
 	}
 
-	int tt;
-	FILE *fNewI;
-	fNewI = fopen("newInfec.dat", "w");
+	sprintf(dirFile, "aveNewI_%d.dat", numSims);
+	fNewI = fopen(dirFile, "w");
 	for (tt=0; tt<maxDays; tt++) fprintf(fNewI, "%d\n", newI_vec[tt]/numSims);
 	fclose(fNewI);
 
 	free(newI_vec);
 	free(edge);
-	free(edgeDel);
+	free(nodeStatus);
+	free(nodeInfec);
+	free(asympTime);
+	free(infecTime);
 
-	exit (0);
+	return 0;
 }
