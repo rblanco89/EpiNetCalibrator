@@ -1,19 +1,15 @@
-HOST_COMPILER = gcc
-#GPU_ARCH = sm_52
-NVCCFLAGS = -O2
-LIBRARIES = -lm -lcurand
-NVCC = nvcc -ccbin $(HOST_COMPILER) $(NVCCFLAGS) #-arch=$(GPU_ARCH)
-
+COMPILER = g++
+LIBS = -lm
+CC = $(COMPILER) 
 OBJS = mainEpiNet.o
 
 EpiNetSimulator : $(OBJS)
-	$(NVCC) $^ -o $@ $(LIBRARIES)
+	$(CC) $^ -o $@ $(LIBS)
 
-%.o : %.cu
-	$(NVCC) -c $< -o $@
+%.o : %.cpp
+	$(CC) -c $< -o $@
+
+.PHONY: clean
 
 clean:
 	rm -f *.o *~
-
-clean-all:
-	rm -f *.o *~ *.dat
