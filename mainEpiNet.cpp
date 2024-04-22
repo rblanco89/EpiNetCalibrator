@@ -418,8 +418,9 @@ int main()
 		//memset(newI_vec, 0, maxDays*sizeof(int)); 
 	}
 
-	sprintf(dirFile, "aveNewI_%d.dat", numSims);
-	fNewI = fopen(dirFile, "w");
+	//sprintf(dirFile, "aveNewI_%d.dat", numSims);
+	//fNewI = fopen(dirFile, "w");
+	fNewI = fopen("aveNewI.dat", "w");
 	for (tt=0; tt<maxDays; tt++) fprintf(fNewI, "%d\n", newI_vec[tt]/numSims);
 	fclose(fNewI);
 

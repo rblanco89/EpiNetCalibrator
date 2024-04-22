@@ -2,3 +2,4 @@
 *.dat
 EpiNetSimulator
 dataSim/*
+.ipynb_checkpoints
