@@ -369,7 +369,7 @@ int main()
 	}
 
 	// Initialize random uniform numbers
-	Ran ranUni(12345);
+	Ran ranUni(seed);
 	// Asymptomatic time = 3d +- 1d
 	Gammadev gammaA(9.0,3.0,seed); // a = (aveTime/stdTime)^2; b = aveTime/stdTime^2
 	// Infected time = 10d +- 3d
