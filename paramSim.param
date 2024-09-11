@@ -1,17 +1,17 @@
 1e5		# Number of nodes
 0		# Network model (0: WS or ER; 1: BA)
-2             # Average degree of nodes (even number)
+14             # Average degree of nodes (even number)
 1.0		# Probability of rewired (<1: WS; 1: ER)
 10		# Initial infected nodes
-0.9864492361786085             # Probability of developing infection
-0.2567262756466918             # Probability of infecting
+0.2414571042107817             # Probability of developing infection
+0.0375929636781684             # Probability of infecting
 201		# Maximum number of days to simulate 
-20		# Number of simulations to average
-58323             # Seed (random numbers)
+2		# Number of simulations to average
+15023             # Seed (random numbers)
 
 # Lockdown
 1		# Activate lockdown? (0: No, 1: Yes)
-0.883732053005148             # Prob. to restrict a random edge during the LD
+0.2030716506342583             # Prob. to restrict a random edge during the LD
 7		# Start of lockdown (days in a row with an increase in new cases) 
 180		# End of lockdown (days)
 0		# Days of alternation in lockdown

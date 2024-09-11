@@ -6,7 +6,7 @@
 #E		# Probability of developing infection
 #B		# Probability of infecting 
 201		# Maximum number of days to simulate 
-20		# Number of simulations to average
+10		# Number of simulations to average
 #SEED		# Seed (random numbers)
 
 # Lockdown
